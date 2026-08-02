@@ -1,10 +1,15 @@
+import { NativeModules, Platform } from 'react-native';
 import TrackPlayer from 'react-native-track-player';
 
 import { setupPlayer } from './player';
 
-export const MIN_SONG_GAIN_DB = -12;
-export const MAX_SONG_GAIN_DB = 12;
+export const MIN_SONG_GAIN_DB = -20;
+export const MAX_SONG_GAIN_DB = 20;
 export const DEFAULT_SONG_GAIN_DB = 0;
+
+type TrackPlayerModuleWithGain = {
+  setTrackGainDecibels?: (decibels: number) => Promise<void>;
+};
 
 export function normalizeSongGainDb(gainDb: number) {
   if (!Number.isFinite(gainDb)) {
@@ -20,5 +25,14 @@ export function songGainDbToLinear(gainDb: number) {
 
 export async function applySongGainDb(gainDb: number) {
   await setupPlayer();
-  await TrackPlayer.setVolume(songGainDbToLinear(gainDb));
+
+  const normalizedGainDb = normalizeSongGainDb(gainDb);
+  const trackPlayerModule = NativeModules.TrackPlayerModule as TrackPlayerModuleWithGain | undefined;
+
+  if (Platform.OS === 'android' && trackPlayerModule?.setTrackGainDecibels) {
+    await trackPlayerModule.setTrackGainDecibels(normalizedGainDb);
+    return;
+  }
+
+  await TrackPlayer.setVolume(Math.min(1, songGainDbToLinear(normalizedGainDb)));
 }

@@ -1,5 +1,5 @@
 diff --git a/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/module/MusicModule.kt b/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/module/MusicModule.kt
-index b2409a0..6537a6a 100644
+index b2409a0..e7f80b5 100644
 --- a/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/module/MusicModule.kt
 +++ b/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/module/MusicModule.kt
 @@ -251,7 +251,8 @@ class MusicModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaM
@@ -162,7 +162,7 @@ index b2409a0..6537a6a 100644
          if (verifyServiceBoundOrReject(callback)) return@launch
  
          musicService.stop()
-@@ -431,135 +455,171 @@ class MusicModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaM
+@@ -431,135 +455,181 @@ class MusicModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaM
  
          callback.resolve(null)
      }
@@ -243,6 +243,16 @@ index b2409a0..6537a6a 100644
          musicService.setVolume(volume)
          callback.resolve(null)
      }
++    }
++
++    @ReactMethod
++    fun setTrackGainDecibels(decibels: Float, callback: Promise) {
++        scope.launch {
++        if (verifyServiceBoundOrReject(callback)) return@launch
++
++        musicService.setTrackGainDecibels(decibels)
++        callback.resolve(null)
++    }
 +    }
  
      @ReactMethod
@@ -352,7 +362,7 @@ index b2409a0..6537a6a 100644
          if (verifyServiceBoundOrReject(callback)) return@launch
  
          try {
-@@ -570,49 +630,61 @@ class MusicModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaM
+@@ -570,49 +640,61 @@ class MusicModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaM
              rejectWithException(callback, exception)
          }
      }
@@ -423,7 +433,7 @@ index b2409a0..6537a6a 100644
          if (verifyServiceBoundOrReject(callback)) return@launch
          var bundle = Bundle()
          bundle.putDouble("duration", musicService.getDurationInSeconds());
-@@ -620,10 +692,13 @@ class MusicModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaM
+@@ -620,10 +702,13 @@ class MusicModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaM
          bundle.putDouble("buffered", musicService.getBufferedPositionInSeconds());
          callback.resolve(Arguments.fromBundle(bundle))
      }
@@ -439,10 +449,66 @@ index b2409a0..6537a6a 100644
 +    }
  }
 diff --git a/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/service/MusicService.kt b/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/service/MusicService.kt
-index afa6b0f..c417e7b 100644
+index afa6b0f..83e0e66 100644
 --- a/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/service/MusicService.kt
 +++ b/node_modules/react-native-track-player/android/src/main/java/com/doublesymmetry/trackplayer/service/MusicService.kt
-@@ -741,7 +741,7 @@ class MusicService : HeadlessJsTaskService() {
+@@ -9,6 +9,7 @@ import android.os.Binder
+ import android.os.Build
+ import android.os.Bundle
+ import android.os.IBinder
++import android.media.audiofx.LoudnessEnhancer
+ import android.support.v4.media.RatingCompat
+ import androidx.annotation.MainThread
+ import androidx.core.app.NotificationCompat
+@@ -33,10 +34,13 @@ import com.facebook.react.HeadlessJsTaskService
+ import com.facebook.react.bridge.Arguments
+ import com.facebook.react.jstasks.HeadlessJsTaskConfig
+ import com.facebook.react.modules.core.DeviceEventManagerModule
++import com.google.android.exoplayer2.ExoPlayer
+ import com.google.android.exoplayer2.ui.R as ExoPlayerR
+ import kotlinx.coroutines.*
+ import kotlinx.coroutines.flow.flow
+ import java.util.concurrent.TimeUnit
++import kotlin.math.pow
++import kotlin.math.roundToInt
+ import kotlin.system.exitProcess
+ import timber.log.Timber
+ 
+@@ -46,6 +50,9 @@ class MusicService : HeadlessJsTaskService() {
+     private val binder = MusicBinder()
+     private val scope = MainScope()
+     private var progressUpdateJob: Job? = null
++    private var trackGainDecibels = 0f
++    private var loudnessEnhancer: LoudnessEnhancer? = null
++    private var loudnessEnhancerSessionId: Int? = null
+ 
+     /**
+      * Use [appKilledPlaybackBehavior] instead.
+@@ -407,6 +414,12 @@ class MusicService : HeadlessJsTaskService() {
+         player.volume = value
+     }
+ 
++    @MainThread
++    fun setTrackGainDecibels(value: Float) {
++        trackGainDecibels = value.coerceIn(MIN_TRACK_GAIN_DB, MAX_TRACK_GAIN_DB)
++        applyTrackGainDecibels()
++    }
++
+     @MainThread
+     fun getDurationInSeconds(): Double = player.duration.toSeconds()
+ 
+@@ -606,6 +619,10 @@ class MusicService : HeadlessJsTaskService() {
+             event.stateChange.collect {
+                 emit(MusicEvents.PLAYBACK_STATE, getPlayerStateBundle(it))
+ 
++                if (it == AudioPlayerState.READY || it == AudioPlayerState.PLAYING) {
++                    applyTrackGainDecibels()
++                }
++
+                 if (it == AudioPlayerState.ENDED && player.nextItem == null) {
+                     emitQueueEndedEvent()
+                 }
+@@ -741,7 +758,7 @@ class MusicService : HeadlessJsTaskService() {
  
      @MainThread
      private fun emit(event: String, data: Bundle? = null) {
@@ -451,7 +517,7 @@ index afa6b0f..c417e7b 100644
              ?.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
              ?.emit(event, data?.let { Arguments.fromBundle(it) })
      }
-@@ -751,7 +751,7 @@ class MusicService : HeadlessJsTaskService() {
+@@ -751,7 +768,7 @@ class MusicService : HeadlessJsTaskService() {
          val payload = Arguments.createArray()
          data.forEach { payload.pushMap(Arguments.fromBundle(it)) }
  
@@ -460,3 +526,85 @@ index afa6b0f..c417e7b 100644
              ?.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
              ?.emit(event, payload)
      }
+@@ -800,6 +817,7 @@ class MusicService : HeadlessJsTaskService() {
+     override fun onDestroy() {
+         super.onDestroy()
+         if (::player.isInitialized) {
++            releaseLoudnessEnhancer()
+             player.destroy()
+         }
+ 
+@@ -811,6 +829,65 @@ class MusicService : HeadlessJsTaskService() {
+         val service = this@MusicService
+     }
+ 
++    private fun getNativeExoPlayer(): ExoPlayer? {
++        return runCatching {
++            generateSequence(player.javaClass as Class<*>?) { it.superclass }
++                .mapNotNull { type ->
++                    runCatching {
++                        type.getDeclaredField("exoPlayer").apply {
++                            isAccessible = true
++                        }
++                    }.getOrNull()
++                }
++                .firstOrNull()
++                ?.get(player) as? ExoPlayer
++        }.getOrNull()
++    }
++
++    private fun releaseLoudnessEnhancer() {
++        loudnessEnhancer?.let { enhancer ->
++            try {
++                enhancer.enabled = false
++                enhancer.release()
++            } catch (error: Throwable) {
++                Timber.w(error, "Unable to release track gain")
++            }
++        }
++        loudnessEnhancer = null
++        loudnessEnhancerSessionId = null
++    }
++
++    @MainThread
++    private fun applyTrackGainDecibels() {
++        val gainDb = trackGainDecibels.coerceIn(MIN_TRACK_GAIN_DB, MAX_TRACK_GAIN_DB)
++        player.volume = if (gainDb < 0) 10.0.pow(gainDb / 20.0).toFloat() else 1f
++
++        if (gainDb <= 0) {
++            releaseLoudnessEnhancer()
++            return
++        }
++
++        val sessionId = getNativeExoPlayer()?.audioSessionId ?: 0
++        if (sessionId <= 0) {
++            releaseLoudnessEnhancer()
++            return
++        }
++
++        try {
++            if (loudnessEnhancerSessionId != sessionId) {
++                releaseLoudnessEnhancer()
++                loudnessEnhancer = LoudnessEnhancer(sessionId)
++                loudnessEnhancerSessionId = sessionId
++            }
++
++            loudnessEnhancer?.setTargetGain((gainDb * 100).roundToInt())
++            loudnessEnhancer?.enabled = true
++        } catch (error: Throwable) {
++            releaseLoudnessEnhancer()
++            Timber.w(error, "Unable to apply track gain")
++        }
++    }
++
+     companion object {
+         const val EMPTY_NOTIFICATION_ID = 1
+         const val STATE_KEY = "state"
+@@ -850,5 +927,7 @@ class MusicService : HeadlessJsTaskService() {
+ 
+         const val DEFAULT_JUMP_INTERVAL = 15.0
+         const val DEFAULT_STOP_FOREGROUND_GRACE_PERIOD = 5
++        const val MIN_TRACK_GAIN_DB = -20f
++        const val MAX_TRACK_GAIN_DB = 20f
+     }
+ }
