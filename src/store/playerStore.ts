@@ -3,6 +3,7 @@ import TrackPlayer, { State, usePlaybackState, useProgress } from 'react-native-
 
 import { loadQueue, setNativeRepeatMode } from '../services/player';
 import { RepeatMode, Song } from '../types/music';
+import { useSongGainStore } from './songGainStore';
 
 type PlayerState = {
   queue: Song[];
@@ -43,6 +44,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     const resolvedIndex = startSong ? Math.max(0, queue.findIndex((song) => song.id === startSong.id)) : 0;
 
     await loadQueue(queue, resolvedIndex);
+    await useSongGainStore.getState().applySongGain(queue[resolvedIndex]?.id);
     await TrackPlayer.play();
 
     set({
@@ -59,6 +61,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     const queue = shuffled(songs);
 
     await loadQueue(queue, 0);
+    await useSongGainStore.getState().applySongGain(queue[0].id);
     await TrackPlayer.play();
 
     set({
@@ -84,6 +87,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
 
     const nextIndex = currentIndex >= queue.length - 1 ? 0 : currentIndex + 1;
     await TrackPlayer.skip(nextIndex);
+    await useSongGainStore.getState().applySongGain(queue[nextIndex].id);
     await TrackPlayer.play();
     set({ currentIndex: nextIndex, currentSong: queue[nextIndex] });
   },
@@ -95,6 +99,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
 
     const previousIndex = currentIndex <= 0 ? queue.length - 1 : currentIndex - 1;
     await TrackPlayer.skip(previousIndex);
+    await useSongGainStore.getState().applySongGain(queue[previousIndex].id);
     await TrackPlayer.play();
     set({ currentIndex: previousIndex, currentSong: queue[previousIndex] });
   },
@@ -105,10 +110,12 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     const queue = get().queue;
     if (typeof index !== 'number' || !queue[index]) {
       set({ currentIndex: -1, currentSong: undefined });
+      void useSongGainStore.getState().applySongGain();
       return;
     }
 
     set({ currentIndex: index, currentSong: queue[index] });
+    void useSongGainStore.getState().applySongGain(queue[index].id);
   },
   toggleShuffle() {
     set((state) => ({ shuffle: !state.shuffle }));

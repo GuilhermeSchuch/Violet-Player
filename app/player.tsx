@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react';
-import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Alert, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import { ChevronDown, ListMusic } from 'lucide-react-native';
@@ -10,6 +10,7 @@ import { Artwork } from '../src/components/Artwork';
 import { PlayerControls } from '../src/components/PlayerControls';
 import { PlaylistPicker } from '../src/components/PlaylistPicker';
 import { ProgressBar } from '../src/components/ProgressBar';
+import { SongGainSlider } from '../src/components/SongGainSlider';
 import { usePlayerStore } from '../src/store/playerStore';
 import { usePlaylistStore } from '../src/store/playlistStore';
 import { colors, spacing } from '../src/utils/theme';
@@ -20,7 +21,9 @@ export default function PlayerScreen() {
   const currentIndex = usePlayerStore((state) => state.currentIndex);
   const playlists = usePlaylistStore((state) => state.playlists);
   const addSong = usePlaylistStore((state) => state.addSong);
+  const { height, width } = useWindowDimensions();
   const [isPlaylistPickerOpen, setIsPlaylistPickerOpen] = useState(false);
+  const artworkSize = Math.floor(Math.min(270, width - spacing.lg * 4, height * 0.34));
 
   const openPlaylistPicker = useCallback(() => {
     if (!currentSong) {
@@ -68,7 +71,7 @@ export default function PlayerScreen() {
         </View>
 
         <Animated.View entering={FadeIn.delay(80)} style={styles.artworkWrap}>
-          <Artwork size={300} />
+          <Artwork size={artworkSize} />
         </Animated.View>
 
         <View style={styles.panel}>
@@ -83,6 +86,7 @@ export default function PlayerScreen() {
           <View style={styles.controls}>
             <PlayerControls />
           </View>
+          <SongGainSlider />
 
           <Text style={styles.queueMeta}>
             {queue.length ? `${currentIndex + 1} of ${queue.length} in queue` : 'Queue is empty'}
