@@ -11,10 +11,13 @@ type LibraryState = {
   songs: Song[];
   isScanning: boolean;
   hasHydrated: boolean;
+  pendingArtistPlaylistNames: string[];
   error?: string;
   setFolder: (folderUri: string) => Promise<void>;
   rescan: () => Promise<void>;
   validateSavedFolder: () => Promise<boolean>;
+  confirmArtistPlaylistCreation: () => void;
+  dismissArtistPlaylistPrompt: () => void;
   markHydrated: () => void;
   clearError: () => void;
 };
@@ -25,12 +28,14 @@ export const useLibraryStore = create<LibraryState>()(
       songs: [],
       isScanning: false,
       hasHydrated: false,
+      pendingArtistPlaylistNames: [],
       async setFolder(folderUri) {
-        set({ folderUri, isScanning: true, error: undefined });
+        set({ folderUri, isScanning: true, error: undefined, pendingArtistPlaylistNames: [] });
         try {
           const songs = await scanMusicFolder(folderUri);
           usePlaylistStore.getState().syncArtistPlaylists(songs);
-          set({ songs, isScanning: false });
+          const pendingArtistPlaylistNames = usePlaylistStore.getState().getNewArtistPlaylistNames(songs);
+          set({ songs, isScanning: false, pendingArtistPlaylistNames });
         } catch (error) {
           set({
             isScanning: false,
@@ -79,6 +84,16 @@ export const useLibraryStore = create<LibraryState>()(
           });
           return false;
         }
+      },
+      confirmArtistPlaylistCreation() {
+        const { songs, pendingArtistPlaylistNames } = get();
+        if (pendingArtistPlaylistNames.length) {
+          usePlaylistStore.getState().syncArtistPlaylists(songs, true);
+        }
+        set({ pendingArtistPlaylistNames: [] });
+      },
+      dismissArtistPlaylistPrompt() {
+        set({ pendingArtistPlaylistNames: [] });
       },
       markHydrated() {
         set({ hasHydrated: true });

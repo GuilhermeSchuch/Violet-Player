@@ -7,6 +7,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { Event, useTrackPlayerEvents } from 'react-native-track-player';
 
 import { FirstLaunchModal } from '../src/components/FirstLaunchModal';
+import { ArtistPlaylistConfirmationModal } from '../src/components/ArtistPlaylistConfirmationModal';
 import { MiniPlayer } from '../src/components/MiniPlayer';
 import { requestStartupPermissions } from '../src/services/permissions';
 import { useLibraryStore } from '../src/store/libraryStore';
@@ -17,6 +18,9 @@ export default function RootLayout() {
   const setCurrentIndex = usePlayerStore((state) => state.setCurrentIndex);
   const libraryHasHydrated = useLibraryStore((state) => state.hasHydrated);
   const validateSavedFolder = useLibraryStore((state) => state.validateSavedFolder);
+  const pendingArtistPlaylistNames = useLibraryStore((state) => state.pendingArtistPlaylistNames);
+  const confirmArtistPlaylistCreation = useLibraryStore((state) => state.confirmArtistPlaylistCreation);
+  const dismissArtistPlaylistPrompt = useLibraryStore((state) => state.dismissArtistPlaylistPrompt);
   const [permissionsChecked, setPermissionsChecked] = useState(false);
 
   useEffect(() => {
@@ -81,6 +85,12 @@ export default function RootLayout() {
         </Stack>
         <MiniPlayer />
         <FirstLaunchModal enabled={permissionsChecked} />
+        <ArtistPlaylistConfirmationModal
+          artistNames={pendingArtistPlaylistNames}
+          visible={pendingArtistPlaylistNames.length > 0}
+          onConfirm={confirmArtistPlaylistCreation}
+          onDismiss={dismissArtistPlaylistPrompt}
+        />
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );

@@ -12,7 +12,8 @@ type PlaylistState = {
   deletePlaylist: (id: string) => void;
   addSong: (playlistId: string, songId: string) => void;
   removeSong: (playlistId: string, songId: string) => void;
-  syncArtistPlaylists: (songs: Song[]) => void;
+  getNewArtistPlaylistNames: (songs: Song[]) => string[];
+  syncArtistPlaylists: (songs: Song[], createMissing?: boolean) => void;
 };
 
 function normalizeArtistKey(artist: string) {
@@ -23,9 +24,33 @@ function makeArtistPlaylistId(artistKey: string) {
   return `artist:${makeId(artistKey)}`;
 }
 
+function collectArtistGroups(songs: Song[]) {
+  const artistGroups = new Map<string, { name: string; songIds: string[] }>();
+
+  for (const song of songs) {
+    const artistKey = normalizeArtistKey(song.artist);
+
+    if (!artistKey || artistKey === 'unknown artist') {
+      continue;
+    }
+
+    const group = artistGroups.get(artistKey) ?? { name: song.artist.trim(), songIds: [] };
+    group.songIds.push(song.id);
+    artistGroups.set(artistKey, group);
+  }
+
+  for (const [artistKey, group] of artistGroups) {
+    if (group.songIds.length < 2) {
+      artistGroups.delete(artistKey);
+    }
+  }
+
+  return artistGroups;
+}
+
 export const usePlaylistStore = create<PlaylistState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       playlists: [],
       createPlaylist(name) {
         const id = `${Date.now()}`;
@@ -72,26 +97,18 @@ export const usePlaylistStore = create<PlaylistState>()(
           ),
         }));
       },
-      syncArtistPlaylists(songs) {
-        const artistGroups = new Map<string, { name: string; songIds: string[] }>();
+      getNewArtistPlaylistNames(songs) {
+        const artistGroups = collectArtistGroups(songs);
+        const existingArtistKeys = new Set(
+          get().playlists.filter((playlist) => playlist.source === 'artist').map((playlist) => playlist.artistKey),
+        );
 
-        for (const song of songs) {
-          const artistKey = normalizeArtistKey(song.artist);
-
-          if (!artistKey || artistKey === 'unknown artist') {
-            continue;
-          }
-
-          const group = artistGroups.get(artistKey) ?? { name: song.artist.trim(), songIds: [] };
-          group.songIds.push(song.id);
-          artistGroups.set(artistKey, group);
-        }
-
-        for (const [artistKey, group] of artistGroups) {
-          if (group.songIds.length < 2) {
-            artistGroups.delete(artistKey);
-          }
-        }
+        return [...artistGroups.entries()]
+          .filter(([artistKey]) => !existingArtistKeys.has(artistKey))
+          .map(([, group]) => group.name);
+      },
+      syncArtistPlaylists(songs, createMissing = false) {
+        const artistGroups = collectArtistGroups(songs);
 
         set((state) => {
           const now = Date.now();
@@ -119,20 +136,22 @@ export const usePlaylistStore = create<PlaylistState>()(
             nextPlaylists.filter((playlist) => playlist.source === 'artist').map((playlist) => playlist.artistKey),
           );
 
-          for (const [artistKey, group] of artistGroups) {
-            if (existingArtistKeys.has(artistKey)) {
-              continue;
-            }
+          if (createMissing) {
+            for (const [artistKey, group] of artistGroups) {
+              if (existingArtistKeys.has(artistKey)) {
+                continue;
+              }
 
-            nextPlaylists.push({
-              id: makeArtistPlaylistId(artistKey),
-              name: group.name,
-              songIds: group.songIds,
-              createdAt: now,
-              updatedAt: now,
-              source: 'artist',
-              artistKey,
-            });
+              nextPlaylists.push({
+                id: makeArtistPlaylistId(artistKey),
+                name: group.name,
+                songIds: group.songIds,
+                createdAt: now,
+                updatedAt: now,
+                source: 'artist',
+                artistKey,
+              });
+            }
           }
 
           return { playlists: nextPlaylists };
