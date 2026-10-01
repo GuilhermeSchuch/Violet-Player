@@ -77,9 +77,12 @@ export default function LibraryScreen() {
   );
 
   const playSong = useCallback(
-    async (index: number) => {
+    async (song: Song) => {
       try {
-        await playSongs(filteredSongs, index);
+        const startIndex = songs.findIndex((librarySong) => librarySong.id === song.id);
+        if (startIndex >= 0) {
+          await playSongs(songs, startIndex);
+        }
       } catch (playbackError) {
         console.error('Unable to play song', playbackError);
         Alert.alert(
@@ -88,12 +91,12 @@ export default function LibraryScreen() {
         );
       }
     },
-    [filteredSongs, playSongs],
+    [playSongs, songs],
   );
 
   const shuffleSongs = useCallback(async () => {
     try {
-      await playShuffledSongs(filteredSongs);
+      await playShuffledSongs(songs);
     } catch (playbackError) {
       console.error('Unable to shuffle songs', playbackError);
       Alert.alert(
@@ -101,7 +104,7 @@ export default function LibraryScreen() {
         playbackError instanceof Error ? playbackError.message : 'The audio player could not load these files.',
       );
     }
-  }, [filteredSongs, playShuffledSongs]);
+  }, [playShuffledSongs, songs]);
 
   return (
     <Screen>
@@ -167,11 +170,11 @@ export default function LibraryScreen() {
             }
           />
         }
-        renderItem={({ item, index }) => (
+        renderItem={({ item }) => (
           <SongRow
             song={item}
             isActive={currentSong?.id === item.id}
-            onPress={() => playSong(index)}
+            onPress={() => playSong(item)}
             onMenuPress={() => openPlaylistPicker(item)}
           />
         )}

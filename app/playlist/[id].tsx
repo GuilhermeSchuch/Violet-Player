@@ -85,17 +85,17 @@ export default function PlaylistDetailScreen() {
         <Text style={styles.subhead}>{playlistSongs.length} songs</Text>
         <View style={styles.heroActions}>
           <Pressable
-            onPress={() => filteredPlaylistSongs.length && playSongs(filteredPlaylistSongs, 0)}
-            disabled={!filteredPlaylistSongs.length}
-            style={[styles.playButton, !filteredPlaylistSongs.length && styles.disabledButton]}
+            onPress={() => playlistSongs.length && playSongs(playlistSongs, 0)}
+            disabled={!playlistSongs.length}
+            style={[styles.playButton, !playlistSongs.length && styles.disabledButton]}
           >
             <Play color={colors.text} size={20} />
             <Text style={styles.playText}>Play</Text>
           </Pressable>
           <Pressable
-            onPress={() => playShuffledSongs(filteredPlaylistSongs)}
-            disabled={!filteredPlaylistSongs.length}
-            style={[styles.shuffleButton, !filteredPlaylistSongs.length && styles.disabledButton]}
+            onPress={() => playShuffledSongs(playlistSongs)}
+            disabled={!playlistSongs.length}
+            style={[styles.shuffleButton, !playlistSongs.length && styles.disabledButton]}
           >
             <Shuffle color={colors.primarySoft} size={20} />
             <Text style={styles.shuffleText}>Shuffle</Text>
@@ -135,11 +135,16 @@ export default function PlaylistDetailScreen() {
             message={query ? 'Try another song title or artist.' : 'Add songs from the Library tab.'}
           />
         }
-        renderItem={({ item, index }) => (
+        renderItem={({ item }) => (
           <SongRow
             song={item}
             isActive={currentSong?.id === item.id}
-            onPress={() => playSongs(filteredPlaylistSongs, index)}
+            onPress={() => {
+              const startIndex = playlistSongs.findIndex((playlistSong) => playlistSong.id === item.id);
+              if (startIndex >= 0) {
+                void playSongs(playlistSongs, startIndex);
+              }
+            }}
             onMenuPress={() => removeSong(playlist.id, item.id)}
             menuIcon={Trash2}
           />
