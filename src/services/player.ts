@@ -55,9 +55,10 @@ async function initializePlayer() {
   });
 }
 
-export function toTrack(song: Song) {
+export function toTrack(song: Song, playlistId?: string) {
   return {
     id: song.id,
+    playlistId,
     url: song.uri,
     title: song.title,
     artist: song.artist,
@@ -65,10 +66,10 @@ export function toTrack(song: Song) {
   };
 }
 
-export async function loadQueue(songs: Song[], startIndex = 0) {
+export async function loadQueue(songs: Song[], startIndex = 0, playlistId?: string) {
   await setupPlayer();
   await TrackPlayer.reset();
-  await TrackPlayer.add(songs.map(toTrack));
+  await TrackPlayer.add(songs.map((song) => toTrack(song, playlistId)));
   await TrackPlayer.skip(startIndex);
 }
 

@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { FlatList, Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
-import { ChevronLeft, Library, ListMusic, Pencil, Play, Search, Settings, Shuffle, Trash2, X } from 'lucide-react-native';
+import { ChevronLeft, House, Library, ListMusic, Pencil, Play, Search, Settings, Shuffle, Trash2, X } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { EmptyState } from '../../src/components/EmptyState';
@@ -85,7 +85,7 @@ export default function PlaylistDetailScreen() {
         <Text style={styles.subhead}>{playlistSongs.length} songs</Text>
         <View style={styles.heroActions}>
           <Pressable
-            onPress={() => playlistSongs.length && playSongs(playlistSongs, 0)}
+            onPress={() => playlistSongs.length && playSongs(playlistSongs, 0, playlist.id)}
             disabled={!playlistSongs.length}
             style={[styles.playButton, !playlistSongs.length && styles.disabledButton]}
           >
@@ -93,7 +93,7 @@ export default function PlaylistDetailScreen() {
             <Text style={styles.playText}>Play</Text>
           </Pressable>
           <Pressable
-            onPress={() => playShuffledSongs(playlistSongs)}
+            onPress={() => playShuffledSongs(playlistSongs, playlist.id)}
             disabled={!playlistSongs.length}
             style={[styles.shuffleButton, !playlistSongs.length && styles.disabledButton]}
           >
@@ -142,7 +142,7 @@ export default function PlaylistDetailScreen() {
             onPress={() => {
               const startIndex = playlistSongs.findIndex((playlistSong) => playlistSong.id === item.id);
               if (startIndex >= 0) {
-                void playSongs(playlistSongs, startIndex);
+                void playSongs(playlistSongs, startIndex, playlist.id);
               }
             }}
             onMenuPress={() => removeSong(playlist.id, item.id)}
@@ -153,6 +153,10 @@ export default function PlaylistDetailScreen() {
 
       <View style={[styles.bottomTabs, { height: 70 + Math.max(insets.bottom, 16), paddingBottom: Math.max(insets.bottom, 16) }]}>
         <Pressable onPress={() => router.replace('/')} style={styles.tabItem}>
+          <House color={colors.textDim} size={24} />
+          <Text style={styles.tabText}>Home</Text>
+        </Pressable>
+        <Pressable onPress={() => router.replace('/library')} style={styles.tabItem}>
           <Library color={colors.textDim} size={24} />
           <Text style={styles.tabText}>Library</Text>
         </Pressable>

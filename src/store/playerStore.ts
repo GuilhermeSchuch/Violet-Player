@@ -11,8 +11,8 @@ type PlayerState = {
   currentIndex: number;
   shuffle: boolean;
   repeatMode: RepeatMode;
-  playSongs: (songs: Song[], startIndex?: number) => Promise<void>;
-  playShuffledSongs: (songs: Song[]) => Promise<void>;
+  playSongs: (songs: Song[], startIndex?: number, playlistId?: string) => Promise<void>;
+  playShuffledSongs: (songs: Song[], playlistId?: string) => Promise<void>;
   togglePlay: () => Promise<void>;
   next: () => Promise<void>;
   previous: () => Promise<void>;
@@ -38,12 +38,12 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   currentIndex: -1,
   shuffle: false,
   repeatMode: 'off',
-  async playSongs(songs, startIndex = 0) {
+  async playSongs(songs, startIndex = 0, playlistId) {
     const queue = get().shuffle ? shuffled(songs) : songs;
     const startSong = songs[startIndex];
     const resolvedIndex = startSong ? Math.max(0, queue.findIndex((song) => song.id === startSong.id)) : 0;
 
-    await loadQueue(queue, resolvedIndex);
+    await loadQueue(queue, resolvedIndex, playlistId);
     await useSongGainStore.getState().applySongGain(queue[resolvedIndex]?.id);
     await TrackPlayer.play();
 
@@ -53,14 +53,14 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       currentSong: queue[resolvedIndex],
     });
   },
-  async playShuffledSongs(songs) {
+  async playShuffledSongs(songs, playlistId) {
     if (!songs.length) {
       return;
     }
 
     const queue = shuffled(songs);
 
-    await loadQueue(queue, 0);
+    await loadQueue(queue, 0, playlistId);
     await useSongGainStore.getState().applySongGain(queue[0].id);
     await TrackPlayer.play();
 

@@ -1,5 +1,5 @@
 import { Tabs } from 'expo-router';
-import { ListMusic, Library, Settings } from 'lucide-react-native';
+import { House, ListMusic, Library, Settings } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { colors } from '../../src/utils/theme';
@@ -30,6 +30,10 @@ export default function TabsLayout() {
     >
       <Tabs.Screen
         name="index"
+        options={{ title: "Home", tabBarIcon: ({ color, size }) => <House color={color} size={size} /> }}
+      />
+      <Tabs.Screen
+        name="library"
         options={{
           title: 'Library',
           tabBarIcon: ({ color, size }) => <Library color={color} size={size} />,

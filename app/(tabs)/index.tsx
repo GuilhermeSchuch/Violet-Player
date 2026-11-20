@@ -1,285 +1,158 @@
-import { useCallback, useMemo, useState } from 'react';
-import { Alert, FlatList, Pressable, RefreshControl, StyleSheet, Text, TextInput, View } from 'react-native';
-import { FolderOpen, Music, Search, Shuffle, X } from 'lucide-react-native';
+import { useMemo } from 'react';
+import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { router } from 'expo-router';
+import { FolderOpen, ListMusic, Music2, Play, Shuffle } from 'lucide-react-native';
 
-import { EmptyState } from '../../src/components/EmptyState';
-import { PlaylistPicker } from '../../src/components/PlaylistPicker';
 import { Screen } from '../../src/components/Screen';
-import { SongRow } from '../../src/components/SongRow';
 import { requestMusicFolder } from '../../src/services/libraryScanner';
-import { Song } from '../../src/types/music';
 import { useLibraryStore } from '../../src/store/libraryStore';
+import { listeningLists, useListeningHistory } from '../../src/store/listeningHistory';
 import { usePlayerStore } from '../../src/store/playerStore';
 import { usePlaylistStore } from '../../src/store/playlistStore';
+import { Playlist, Song } from '../../src/types/music';
 import { colors, spacing } from '../../src/utils/theme';
 
-export default function LibraryScreen() {
-  const songs = useLibraryStore((state) => state.songs);
-  const isScanning = useLibraryStore((state) => state.isScanning);
-  const folderUri = useLibraryStore((state) => state.folderUri);
-  const error = useLibraryStore((state) => state.error);
-  const setFolder = useLibraryStore((state) => state.setFolder);
-  const rescan = useLibraryStore((state) => state.rescan);
-  const currentSong = usePlayerStore((state) => state.currentSong);
-  const playSongs = usePlayerStore((state) => state.playSongs);
-  const playShuffledSongs = usePlayerStore((state) => state.playShuffledSongs);
+function countLabel(count: number, noun: string) {
+  return `${count} ${noun}${count === 1 ? '' : 's'}`;
+}
+
+async function perform(action: Promise<unknown>) {
+  try {
+    await action;
+  } catch (error) {
+    Alert.alert('Unable to complete action', error instanceof Error ? error.message : 'Please try again.');
+  }
+}
+
+function HistoryRow({ title, detail, onPress, onPlay }: {
+  title: string;
+  detail: string;
+  onPress: () => void;
+  onPlay?: () => void;
+}) {
+  const Icon = onPlay ? ListMusic : Music2;
+  return (
+    <View style={styles.row}>
+      <Pressable accessibilityRole="button" onPress={onPress} style={styles.rowMain}>
+        <Icon color={colors.primarySoft} size={22} />
+        <View style={styles.copy}>
+          <Text numberOfLines={1} style={styles.rowTitle}>{title}</Text>
+          <Text numberOfLines={1} style={styles.detail}>{detail}</Text>
+        </View>
+      </Pressable>
+      {onPlay && (
+        <Pressable accessibilityRole="button" accessibilityLabel={`Play ${title}`} onPress={onPlay} style={styles.play}>
+          <Play size={20} color={colors.primarySoft} />
+        </Pressable>
+      )}
+    </View>
+  );
+}
+
+export default function HomeScreen() {
+  const { songs, folderUri, hasHydrated, isScanning, setFolder, error } = useLibraryStore();
   const playlists = usePlaylistStore((state) => state.playlists);
-  const addSong = usePlaylistStore((state) => state.addSong);
-  const [query, setQuery] = useState('');
-  const [selectedSong, setSelectedSong] = useState<Song | undefined>();
+  const history = useListeningHistory();
+  const songLists = useMemo(() => listeningLists(songs, history.songs, 5), [songs, history.songs]);
+  const availableIds = useMemo(() => new Set(songs.map((song) => song.id)), [songs]);
+  const playlistLists = useMemo(() => listeningLists(
+    playlists.filter((playlist) => playlist.songIds.some((id) => availableIds.has(id))),
+    history.playlists, 4,
+  ), [playlists, availableIds, history.playlists]);
 
-  const title = useMemo(() => (songs.length === 1 ? '1 song' : `${songs.length} songs`), [songs.length]);
-  const filteredSongs = useMemo(() => {
-    const normalizedQuery = query.trim().toLocaleLowerCase();
+  async function chooseFolder() {
+    const uri = await requestMusicFolder();
+    if (uri) await setFolder(uri);
+  }
 
-    if (!normalizedQuery) {
-      return songs;
-    }
-
-    return songs.filter((song) =>
-      `${song.title} ${song.artist} ${song.fileName}`.toLocaleLowerCase().includes(normalizedQuery),
+  function playlistSection(title: string, items: Playlist[], showCount = false) {
+    if (!items.length) return null;
+    return (
+      <View>
+        <Text style={styles.section}>{title}</Text>
+        {items.map((playlist) => {
+          const size = playlist.songIds.filter((id) => availableIds.has(id)).length;
+          const detail = showCount ? countLabel(history.playlists[playlist.id].plays, 'track play') : countLabel(size, 'song');
+          return (
+            <HistoryRow key={playlist.id} title={playlist.name} detail={detail}
+              onPress={() => router.push(`/playlist/${playlist.id}`)}
+              onPlay={() => {
+                const ids = new Set(playlist.songIds);
+                const queue = songs.filter((song) => ids.has(song.id));
+                void perform(usePlayerStore.getState().playSongs(queue, 0, playlist.id));
+              }}
+            />
+          );
+        })}
+      </View>
     );
-  }, [query, songs]);
+  }
 
-  const chooseFolder = useCallback(async () => {
-    try {
-      const directoryUri = await requestMusicFolder();
-      if (directoryUri) {
-        await setFolder(directoryUri);
-      }
-    } catch (scanError) {
-      Alert.alert('Folder access unavailable', scanError instanceof Error ? scanError.message : 'Unable to choose folder.');
-    }
-  }, [setFolder]);
-
-  const openPlaylistPicker = useCallback(
-    (song: Song) => {
-      if (!playlists.length) {
-        Alert.alert('No playlists yet', 'Create a playlist first from the Playlists tab.');
-        return;
-      }
-
-      setSelectedSong(song);
-    },
-    [playlists],
-  );
-
-  const addSelectedSongToPlaylist = useCallback(
-    (playlistId: string) => {
-      if (!selectedSong) {
-        return;
-      }
-
-      addSong(playlistId, selectedSong.id);
-      setSelectedSong(undefined);
-    },
-    [addSong, selectedSong],
-  );
-
-  const playSong = useCallback(
-    async (song: Song) => {
-      try {
-        const startIndex = songs.findIndex((librarySong) => librarySong.id === song.id);
-        if (startIndex >= 0) {
-          await playSongs(songs, startIndex);
-        }
-      } catch (playbackError) {
-        console.error('Unable to play song', playbackError);
-        Alert.alert(
-          'Unable to play song',
-          playbackError instanceof Error ? playbackError.message : 'The audio player could not load this file.',
-        );
-      }
-    },
-    [playSongs, songs],
-  );
-
-  const shuffleSongs = useCallback(async () => {
-    try {
-      await playShuffledSongs(songs);
-    } catch (playbackError) {
-      console.error('Unable to shuffle songs', playbackError);
-      Alert.alert(
-        'Unable to play songs',
-        playbackError instanceof Error ? playbackError.message : 'The audio player could not load these files.',
-      );
-    }
-  }, [playShuffledSongs, songs]);
+  function songSection(title: string, items: Song[], showCount = false) {
+    if (!items.length) return null;
+    return (
+      <View>
+        <Text style={styles.section}>{title}</Text>
+        {items.map((song) => (
+          <HistoryRow key={song.id} title={song.title}
+            detail={showCount ? `${song.artist} · ${countLabel(history.songs[song.id].plays, 'play')}` : song.artist}
+            onPress={() => perform(usePlayerStore.getState().playSongs(songs, songs.indexOf(song)))}
+          />
+        ))}
+      </View>
+    );
+  }
 
   return (
     <Screen>
-      <View style={styles.header}>
-        <View>
-          <Text style={styles.eyebrow}>Violet Player</Text>
-          <Text style={styles.heading}>Library</Text>
-          <Text style={styles.subhead}>{folderUri ? title : 'Choose a folder to begin'}</Text>
-        </View>
-        <Pressable onPress={chooseFolder} style={styles.folderButton}>
-          <FolderOpen color={colors.text} size={22} />
-        </Pressable>
-      </View>
-
-      {error ? <Text style={styles.error}>{error}</Text> : null}
-
-      {songs.length ? (
-        <View style={styles.libraryTools}>
-          <View style={styles.searchWrap}>
-            <Search color={colors.textMuted} size={20} />
-            <TextInput
-              value={query}
-              onChangeText={setQuery}
-              placeholder="Search songs or artists"
-              placeholderTextColor={colors.textDim}
-              style={styles.searchInput}
-              autoCapitalize="none"
-              autoCorrect={false}
-              returnKeyType="search"
-            />
-            {query ? (
-              <Pressable onPress={() => setQuery('')} hitSlop={12} style={styles.clearButton}>
-                <X color={colors.textMuted} size={18} />
+      <ScrollView contentContainerStyle={styles.content}>
+        <Text accessibilityRole="header" style={styles.heading}>Home</Text>
+        {playlistSection('Recent playlists', playlistLists.recent)}
+        <View style={styles.actions}>
+          {songs.length > 0 ? (
+            <Pressable accessibilityRole="button" style={styles.primary}
+              onPress={() => perform(usePlayerStore.getState().playShuffledSongs(songs))}>
+              <Shuffle size={20} color={colors.text} />
+              <Text style={styles.actionText}>Shuffle {countLabel(songs.length, 'song')}</Text>
+            </Pressable>
+          ) : !hasHydrated || isScanning ? (
+            <Text style={styles.detail}>Loading your music…</Text>
+          ) : (
+            <>
+              {folderUri && <Text style={styles.detail}>No playable songs in this folder.</Text>}
+              <Pressable accessibilityRole="button" style={styles.primary} onPress={() => perform(chooseFolder())}>
+                <FolderOpen size={20} color={colors.text} />
+                <Text style={styles.actionText}>Choose music folder</Text>
               </Pressable>
-            ) : null}
-          </View>
-          <Pressable
-            onPress={shuffleSongs}
-            disabled={!filteredSongs.length}
-            style={({ pressed }) => [styles.shuffleButton, (!filteredSongs.length || pressed) && styles.softPressed]}
-          >
-            <Shuffle color={colors.text} size={18} />
-            <Text style={styles.shuffleText}>Shuffle</Text>
+            </>
+          )}
+          {error && <Text style={styles.error}>{error}</Text>}
+          <Pressable accessibilityRole="button" onPress={() => router.push('/playlists')} style={styles.secondary}>
+            <ListMusic size={20} color={colors.primarySoft} />
+            <Text style={styles.actionText}>Browse playlists</Text>
           </Pressable>
         </View>
-      ) : null}
-
-      <FlatList
-        data={filteredSongs}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={[styles.list, !filteredSongs.length && styles.emptyList]}
-        refreshControl={<RefreshControl refreshing={isScanning} onRefresh={rescan} tintColor={colors.primary} />}
-        ListEmptyComponent={
-          <EmptyState
-            icon={Music}
-            title={query ? 'No matches found' : folderUri ? 'No MP3 files found' : 'Your music lives here'}
-            message={
-              query
-                ? 'Try another song title or artist.'
-                : folderUri
-                  ? 'Pull to rescan or choose another folder.'
-                  : 'Select a folder containing Band - Song Name.mp3 files.'
-            }
-          />
-        }
-        renderItem={({ item }) => (
-          <SongRow
-            song={item}
-            isActive={currentSong?.id === item.id}
-            onPress={() => playSong(item)}
-            onMenuPress={() => openPlaylistPicker(item)}
-          />
-        )}
-        initialNumToRender={14}
-        maxToRenderPerBatch={18}
-        windowSize={8}
-      />
-      <PlaylistPicker
-        visible={Boolean(selectedSong)}
-        playlists={playlists}
-        songTitle={selectedSong?.title}
-        onClose={() => setSelectedSong(undefined)}
-        onSelect={addSelectedSongToPlaylist}
-      />
+        {songSection('Recently played songs', songLists.recent)}
+        {playlistSection('Most played playlists', playlistLists.top, true)}
+        {songSection('Most played songs', songLists.top, true)}
+      </ScrollView>
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: spacing.lg,
-    paddingBottom: spacing.md,
-  },
-  eyebrow: {
-    color: colors.primarySoft,
-    fontSize: 12,
-    fontWeight: '800',
-    letterSpacing: 0,
-    textTransform: 'uppercase',
-  },
-  heading: {
-    color: colors.text,
-    fontSize: 36,
-    fontWeight: '800',
-  },
-  subhead: {
-    color: colors.textMuted,
-    marginTop: 4,
-  },
-  folderButton: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    width: 48,
-    height: 48,
-    borderRadius: 8,
-    backgroundColor: colors.panelElevated,
-  },
-  error: {
-    color: colors.danger,
-    paddingHorizontal: spacing.lg,
-    marginBottom: spacing.sm,
-  },
-  libraryTools: {
-    paddingHorizontal: spacing.md,
-    marginBottom: spacing.md,
-    gap: spacing.sm,
-  },
-  searchWrap: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    height: 52,
-    paddingHorizontal: spacing.md,
-    borderRadius: 8,
-    backgroundColor: colors.panel,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.border,
-  },
-  searchInput: {
-    flex: 1,
-    minWidth: 0,
-    color: colors.text,
-    fontSize: 16,
-  },
-  clearButton: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    width: 30,
-    height: 30,
-  },
-  shuffleButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.sm,
-    height: 48,
-    borderRadius: 8,
-    backgroundColor: colors.primary,
-  },
-  softPressed: {
-    opacity: 0.72,
-  },
-  shuffleText: {
-    color: colors.text,
-    fontWeight: '800',
-  },
-  list: {
-    paddingHorizontal: spacing.sm,
-    paddingBottom: 196,
-  },
-  emptyList: {
-    flexGrow: 1,
-    justifyContent: 'center',
-  },
+  content: { padding: spacing.lg, paddingBottom: 196, gap: spacing.lg },
+  heading: { color: colors.text, fontSize: 36, fontWeight: '800' },
+  section: { color: colors.text, fontSize: 21, fontWeight: '700', marginBottom: spacing.sm },
+  actions: { gap: spacing.sm },
+  primary: { minHeight: 52, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm, backgroundColor: colors.primary, borderRadius: 8 },
+  secondary: { minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm, backgroundColor: colors.panelElevated, borderRadius: 8 },
+  actionText: { color: colors.text, fontWeight: '700', fontSize: 16 },
+  row: { flexDirection: 'row', alignItems: 'center', borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
+  rowMain: { minHeight: 62, flex: 1, flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+  copy: { flex: 1, gap: 3 },
+  rowTitle: { color: colors.text, fontWeight: '600', fontSize: 16 },
+  detail: { color: colors.textMuted },
+  play: { width: 48, height: 48, alignItems: 'center', justifyContent: 'center' },
+  error: { color: colors.danger },
 });
